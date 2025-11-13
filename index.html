@@ -3,56 +3,919 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cardinal book store</title>
-    <!-- This style tag is used to format the reference page itself to make it readable. -->
+    <title>TTRPG Map Viewer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
-            line-height: 1.6;
-            background-color: #ffffff;
-            color: #111;
-            max-width: 800px;
-            margin: 20px auto;
-            padding: 0 20px;
-			  }
-        h1, h2, h3 {
-            border-bottom: 1px solid #ccc;
-            padding-bottom: 5px;
-            font-weight: 600;
-        }
-        h1 {
-            font-size: 2em;
-        }
-        h2 {
-            font-size: 1.5em;
-            margin-top: 30px;
-        }
-        h3 {
-            font-size: 1.2em;
-            margin-top: 25px;
-            border-bottom: none;
-            font-weight: 600;
-        }
-        /* This 'code' style is for inline tag examples */
-        code {
-            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
-            background-color: #f4f4f4;
-            padding: 2px 5px;
-            border-radius: 4px;
-            font-size: 0.9em;
-        }
-        /* This 'pre' style is for multi-line code blocks */
-        pre {
-            background-color: #f4f4f4;
-            padding: 15px;
-            border-radius: 5px;
-            overflow-x: auto;
-            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
-            font-size: 0.9em;
-        }
+        /* --- Base & Default Tech Theme --- */
+        body { font-family: 'Inter', sans-serif; overscroll-behavior: none; background-color: #111827; } /* Default body bg */
+        /* Cursors managed by JS based on interactionSubMode */
+        .map-container svg { width: 100%; height: 100%; object-fit: contain; user-select: none; } 
+        .map-container svg.pan-mode { cursor: grab; }
+        .map-container svg.select-mode { cursor: default; } /* Default cursor for selection */
+        .map-container svg.measure-mode { cursor: crosshair; }
+        .map-container svg.grabbing { cursor: grabbing; } /* Cursor during active pan/drag */
+        .hud-border { border: 1px solid #0891b2; box-shadow: 0 0 10px rgba(14, 165, 233, 0.5), inset 0 0 10px rgba(14, 165, 233, 0.3); }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #0891b2; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #06b6d4; }
+        .active-turn { background-color: #0e7490; border-left: 4px solid #67e8f9; }
+        /* Cursor for map objects changes based on select mode */
+        .map-object { cursor: pointer; touch-action: none; } 
+        .select-mode .map-object { cursor: pointer; } /* Explicit pointer in select mode */
+        .pan-mode .map-object { cursor: grab; } /* Grab cursor over objects when in pan mode */
+
+        .token-shape { fill: #c026d3; stroke: #e879f9; stroke-width: 2px; }
+        .pin-shape { fill: #3b82f6; stroke: #60a5fa; stroke-width: 2px; }
+        .aoe-shape { fill: rgba(250, 204, 21, 0.4); stroke: #facc15; stroke-width: 2px; }
+        .map-object-label, .status-text { fill: #fff; font-size: 10px; text-anchor: middle; pointer-events: none; }
+        .map-object-hp { fill: #fff; font-size: 8px; text-anchor: middle; pointer-events: none; }
+        .selected-object { stroke: #facc15; stroke-width: 4px; }
+        .active-turn-token { stroke: #ef4444; stroke-width: 4px; filter: drop-shadow(0 0 8px #ef4444); }
+        .hidden-object { opacity: 0.5; filter: grayscale(80%); }
+        .player-view .hidden-object { display: none; }
+        .measure-line { stroke: #fde047; stroke-width: 3; stroke-dasharray: 8 4; pointer-events: none; }
+        .measure-text { fill: #fde047; font-size: 16px; font-weight: bold; text-anchor: middle; pointer-events: none; stroke: black; stroke-width: 0.5px; paint-order: stroke; }
+        .status-badge { display: inline-block; background-color: #4b5563; color: #e5e7eb; padding: 2px 6px; font-size: 10px; border-radius: 10px; margin-right: 4px; margin-top: 4px; }
+        .status-badge .remove-status { cursor: pointer; margin-left: 4px; color: #fca5a5; font-weight: bold; }
+        .confirm-delete { background-color: #b91c1c; }
+
+        /* Tailwind overrides for default theme elements */
+        .bg-gray-900 { background-color: #111827; }
+        .bg-gray-800\/50 { background-color: rgba(31, 41, 55, 0.5); }
+        #grid-svg rect[fill="#1f2937"] { fill: #1f2937; }
+        #grid-svg pattern #grid-path { stroke: rgba(107, 114, 128, 0.5); }
+
+        /* --- Gaslit Theme Overrides --- */
+        body.theme-gaslit { background-color: #343633; } /* body bg - Charcoal */
+        .theme-gaslit .hud-border { border-color: #F28500; box-shadow: 0 0 10px rgba(242, 133, 0, 0.5), inset 0 0 10px rgba(242, 133, 0, 0.3); } /* Amber */
+        .theme-gaslit ::-webkit-scrollbar-thumb { background: #BF6900; } /* Darker Amber */
+        .theme-gaslit ::-webkit-scrollbar-thumb:hover { background: #F28500; }
+        .theme-gaslit .active-turn { background-color: #BF6900; border-left-color: #F28500; } /* Darker Amber, Amber accent */
+        .theme-gaslit .text-cyan-400 { color: #F28500; } /* Amber text */
+        .theme-gaslit .border-cyan-600\/50 { border-color: rgba(242, 133, 0, 0.5); }
+        .theme-gaslit .focus\:ring-cyan-500:focus { --tw-ring-color: #F28500; }
+        
+        /* Button colors for Gaslit theme */
+        .theme-gaslit .bg-indigo-700, .theme-gaslit .bg-purple-700, .theme-gaslit .bg-teal-700, .theme-gaslit .bg-sky-700, .theme-gaslit .bg-blue-700, .theme-gaslit .bg-cyan-700, .theme-gaslit .bg-gray-700, .theme-gaslit .bg-blue-600 { background-color: #4a4e48; } /* Lighter Charcoal */
+        .theme-gaslit .hover\:bg-indigo-600:hover, .theme-gaslit .hover\:bg-purple-600:hover, .theme-gaslit .hover\:bg-teal-600:hover, .theme-gaslit .hover\:bg-sky-600:hover, .theme-gaslit .hover\:bg-blue-600:hover, .theme-gaslit .hover\:bg-cyan-600:hover, .theme-gaslit .hover\:bg-gray-600:hover, .theme-gaslit .hover\:bg-blue-500:hover { background-color: #5f635c; }
+        .theme-gaslit .bg-fuchsia-700, .theme-gaslit .bg-green-700, .theme-gaslit .bg-yellow-700, .theme-gaslit .bg-yellow-800, .theme-gaslit .bg-green-800 { background-color: #F28500; color: #343633; } /* Amber buttons, charcoal text */
+        .theme-gaslit .hover\:bg-fuchsia-600:hover, .theme-gaslit .hover\:bg-green-600:hover, .theme-gaslit .hover\:bg-yellow-600:hover, .theme-gaslit .hover\:bg-yellow-700:hover { background-color: #ff9d2d; } /* Lighter amber hover */
+        .theme-gaslit .bg-cyan-800 { background-color: #4a4e48; } /* Lighter charcoal for toggle button */
+        .theme-gaslit .hover\:bg-cyan-700:hover { background-color: #5f635c; }
+        .theme-gaslit .bg-red-800, .theme-gaslit .bg-red-700 { background-color: #BF3604; } /* A deep orange-red for danger */
+        .theme-gaslit .hover\:bg-red-700:hover, .theme-gaslit .hover\:bg-red-600:hover { background-color: #D94E1A; }
+        
+        /* Specific background and grid colors for Gaslit theme */
+        .theme-gaslit .bg-gray-900 { background-color: #343633; } /* Main panel bg - Charcoal */
+        .theme-gaslit .bg-gray-800\/50 { background-color: rgba(52, 54, 51, 0.5); } /* Map container bg - transparent Charcoal */
+        .theme-gaslit #grid-svg rect[fill="#1f2937"] { fill: #343633; } /* Grid background - Charcoal */
+        .theme-gaslit #grid-svg pattern #grid-path { stroke: rgba(242, 133, 0, 0.7); } /* Grid lines - Amber */
+        .theme-gaslit .token-shape { fill: #BF6900; stroke: #F28500; } /* Darker amber token with amber stroke */
+        .theme-gaslit .pin-shape { fill: #F28500; stroke: #ff9d2d; } /* Amber pin */
+        .theme-gaslit .aoe-shape { fill: rgba(242, 133, 0, 0.4); stroke: #F28500; } /* AoE using Amber */
+        .theme-gaslit .measure-line, .theme-gaslit .measure-text { stroke: #F28500; fill: #F28500; } /* Measure line using Amber */
+        .theme-gaslit .status-badge { background-color: #5f635c; color: #e5e7eb; }
+
+        /* --- Fantasy Theme Overrides --- */
+        body.theme-fantasy { background-color: #3d342b; } /* body bg - Earthy Brown */
+        .theme-fantasy .hud-border { border-color: #c9b79c; box-shadow: 0 0 10px rgba(201, 183, 156, 0.5), inset 0 0 10px rgba(201, 183, 156, 0.3); } /* Parchment */
+        .theme-fantasy ::-webkit-scrollbar-thumb { background: #5a4d41; } /* Darker Earthy Brown */
+        .theme-fantasy ::-webkit-scrollbar-thumb:hover { background: #736353; }
+        .theme-fantasy .active-turn { background-color: #5a4d41; border-left-color: #c9b79c; } /* Darker Brown, Parchment accent */
+        .theme-fantasy .text-cyan-400 { color: #c9b79c; } /* Parchment text */
+        .theme-fantasy .border-cyan-600\/50 { border-color: rgba(201, 183, 156, 0.5); }
+        .theme-fantasy .focus\:ring-cyan-500:focus { --tw-ring-color: #c9b79c; }
+        
+        /* Button colors for Fantasy theme */
+        .theme-fantasy .bg-indigo-700, .theme-fantasy .bg-purple-700, .theme-fantasy .bg-teal-700, .theme-fantasy .bg-sky-700, .theme-fantasy .bg-blue-700, .theme-fantasy .bg-cyan-700, .theme-fantasy .bg-gray-700, .theme-fantasy .bg-blue-600 { background-color: #5a6e5b; } /* Mossy Green */
+        .theme-fantasy .hover\:bg-indigo-600:hover, .theme-fantasy .hover\:bg-purple-600:hover, .theme-fantasy .hover\:bg-teal-600:hover, .theme-fantasy .hover\:bg-sky-600:hover, .theme-fantasy .hover\:bg-blue-600:hover, .theme-fantasy .hover\:bg-cyan-600:hover, .theme-fantasy .hover\:bg-gray-600:hover, .theme-fantasy .hover\:bg-blue-500:hover { background-color: #7c917d; }
+        .theme-fantasy .bg-fuchsia-700, .theme-fantasy .bg-green-700, .theme-fantasy .bg-yellow-700, .theme-fantasy .bg-yellow-800, .theme-fantasy .bg-green-800 { background-color: #b48a3e; color: #3d342b; } /* Ochre buttons, dark brown text */
+        .theme-fantasy .hover\:bg-fuchsia-600:hover, .theme-fantasy .hover\:bg-green-600:hover, .theme-fantasy .hover\:bg-yellow-600:hover, .theme-fantasy .hover\:bg-yellow-700:hover { background-color: #d1a866; }
+        .theme-fantasy .bg-cyan-800 { background-color: #5a4d41; } /* Darker Earthy Brown */
+        .theme-fantasy .hover\:bg-cyan-700:hover { background-color: #736353; }
+        .theme-fantasy .bg-red-800, .theme-fantasy .bg-red-700 { background-color: #8c4a4a; } /* Muted, desaturated red */
+        .theme-fantasy .hover\:bg-red-700:hover, .theme-fantasy .hover\:bg-red-600:hover { background-color: #a45e5e; }
+
+        /* Specific background and grid colors for Fantasy theme */
+        .theme-fantasy .bg-gray-900 { background-color: #3d342b; } /* Main panel bg - Earthy Brown */
+        .theme-fantasy .bg-gray-800\/50 { background-color: rgba(61, 52, 43, 0.5); } /* Map container bg - transparent Earthy Brown */
+        .theme-fantasy #grid-svg rect[fill="#1f2937"] { fill: #3d342b; } /* Grid background - Earthy Brown */
+        .theme-fantasy #grid-svg pattern #grid-path { stroke: #c9b79c; } /* Grid lines - Parchment */
+        .theme-fantasy .token-shape { fill: #5a6e5b; stroke: #7c917d; } /* Token - Mossy Green */
+        .theme-fantasy .pin-shape { fill: #b48a3e; stroke: #d1a866; } /* Pin - Ochre */
+        .theme-fantasy .aoe-shape { fill: rgba(180, 138, 62, 0.4); stroke: #b48a3e; } /* AoE using Ochre */
+        .theme-fantasy .measure-line, .theme-fantasy .measure-text { stroke: #c9b79c; fill: #c9b79c; } /* Measure line using Parchment */
+        .theme-fantasy .status-badge { background-color: #5a4d41; color: #c9b79c; }
+
     </style>
 </head>
-<body>
-<h1> Cardinal book store: the perefect place to find your next read </h1>
+<body class="bg-gray-900 text-gray-200 flex flex-col md:flex-row h-screen overflow-hidden">
+
+    <aside id="controls-panel" class="w-full md:w-1/3 lg:w-1/4 bg-gray-900/80 backdrop-blur-sm p-4 sm:p-6 flex flex-col hud-border m-2 rounded-lg">
+        <header class="mb-4 pb-2 border-b-2 border-cyan-600/50">
+            <h1 id="map-title" class="text-2xl font-bold text-cyan-400">Combat Grid</h1>
+            <p id="panel-subtitle" class="text-sm text-gray-400">Tactical Map</p>
+        </header>
+        <div id="map-info" class="flex-grow overflow-y-auto pr-2">
+            <p id="map-description" class="text-gray-300 mb-4">Upload a map or use the blank grid to start your combat encounter.</p>
+        </div>
+        <footer class="mt-4 pt-4 border-t-2 border-cyan-600/50 space-y-4 overflow-y-auto">
+              <div>
+                  <h3 class="text-lg font-bold text-cyan-400 mb-2">Map Controls</h3>
+                  <div class="flex flex-wrap gap-2">
+                      <button onclick="document.getElementById('image-upload').click()" class="flex-grow bg-indigo-700 hover:bg-indigo-600 text-white py-2 px-4 rounded-md">Upload Map</button>
+                      <input type="file" id="image-upload" accept="image/*" class="hidden" onchange="handleImageUpload(event)">
+                      <button id="measure-tool-btn" class="flex-grow bg-purple-700 hover:bg-purple-600 text-white py-2 px-4 rounded-md">Measure</button>
+                      <button id="dm-view-toggle" class="flex-grow bg-gray-700 hover:bg-gray-600 text-white py-2 px-4 rounded-md">Toggle DM View</button>
+                  </div>
+                   <div class="mt-4 space-y-2">
+                        <label for="theme-switcher" class="text-sm font-bold text-cyan-400">UI Theme</label>
+                        <select id="theme-switcher" onchange="changeTheme(this.value)" class="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                            <option value="Tech">Tech (Default)</option>
+                            <option value="Gaslit">Gaslit</option>
+                            <option value="Fantasy">Fantasy</option>
+                        </select>
+                   </div>
+                  <div id="grid-controls" class="mt-4 space-y-2">
+                      <p class="text-sm font-bold text-cyan-400">Grid Dimensions</p>
+                      <div class="flex gap-2">
+                          <input type="number" id="grid-width" value="20" placeholder="Width" class="w-1/2 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                          <input type="number" id="grid-height" value="15" placeholder="Height" class="w-1/2 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                      </div>
+                       <button onclick="generateCombatGrid()" class="w-full bg-teal-700 hover:bg-teal-600 text-white py-1 rounded-md mt-2">Update Grid</button>
+                  </div>
+              </div>
+              <div id="map-library" class="border-t-2 border-cyan-600/50 pt-4">
+                  <h3 class="text-lg font-bold text-cyan-400 mb-2">Map Library</h3>
+                  <div class="flex gap-2 mb-2">
+                      <input type="text" id="save-map-name" placeholder="Name for current map" class="flex-grow bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                      <button id="save-map-btn" class="bg-green-700 hover:bg-green-600 text-white font-bold py-1 px-3 rounded-md disabled:opacity-50 disabled:cursor-not-allowed" disabled>Save</button>
+                  </div>
+                  <div id="map-library-list" class="space-y-1 max-h-32 overflow-y-auto pr-2"></div>
+              </div>
+              <div id="session-controls" class="border-t-2 border-cyan-600/50 pt-4">
+                  <h3 class="text-lg font-bold text-cyan-400 mb-2">Session State</h3>
+                  <div class="flex gap-2">
+                      <button onclick="saveState()" class="flex-grow bg-green-800 hover:bg-green-700 text-white py-2 px-4 rounded-md">Save</button>
+                      <button onclick="document.getElementById('load-state-input').click()" class="flex-grow bg-yellow-700 hover:bg-yellow-600 text-white py-2 px-4 rounded-md">Load</button>
+                      <input type="file" id="load-state-input" accept=".json" class="hidden" onchange="loadState(event)">
+                  </div>
+              </div>
+              <div id="aoe-palette" class="border-t-2 border-cyan-600/50 pt-4">
+                   <h3 class="text-lg font-bold text-cyan-400 mb-2">AoE Templates</h3>
+                   <div class="flex flex-wrap gap-2">
+                         <button onclick="addAoeTemplate('circle')" class="flex-grow bg-yellow-800 hover:bg-yellow-700 text-white py-2 px-3 rounded-md">Circle</button>
+                         <button onclick="addAoeTemplate('cone')" class="flex-grow bg-yellow-800 hover:bg-yellow-700 text-white py-2 px-3 rounded-md">Cone</button>
+                   </div>
+              </div>
+              <div id="pins-palette" class="border-t-2 border-cyan-600/50 pt-4">
+                   <h3 class="text-lg font-bold text-cyan-400 mb-2">Map Pins</h3>
+                   <div id="pins-list" class="flex flex-wrap gap-2 mb-2"></div>
+                   <div class="flex gap-2">
+                        <input type="text" id="pin-name" placeholder="Pin Name (e.g. Cover)" class="flex-grow bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                        <button id="add-pin-btn" class="bg-blue-700 hover:bg-blue-600 text-white font-bold py-1 px-3 rounded-md">Add</button>
+                   </div>
+              </div>
+              <div id="turn-tracker" class="border-t-2 border-cyan-600/50 pt-4">
+                  <h3 class="text-lg font-bold text-cyan-400 mb-2">Turn Order</h3>
+                  <div id="turn-order-list" class="space-y-1 mb-3 max-h-40 overflow-y-auto pr-2"></div>
+                  <div class="flex gap-2 mb-2">
+                      <input type="text" id="char-name" placeholder="Name" class="flex-grow bg-gray-800 border border-gray-600 rounded px-2 py-1">
+                      <input type="number" id="char-initiative" placeholder="Init" class="w-16 bg-gray-800 border border-gray-600 rounded px-2 py-1">
+                      <input type="number" id="char-hp" placeholder="HP" class="w-16 bg-gray-800 border border-gray-600 rounded px-2 py-1">
+                  </div>
+                  <button id="add-char-btn" class="w-full bg-cyan-700 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-md mb-2">Add Participant</button>
+                  <div class="flex gap-2">
+                      <button id="next-turn-btn" class="flex-grow bg-green-700 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-md">Next Turn</button>
+                      <button id="reset-turns-btn" class="flex-grow bg-red-800 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-md">Reset</button>
+                  </div>
+              </div>
+        </footer>
+    </aside>
+
+    <div class="flex items-center bg-gray-900">
+        <button id="toggle-controls-btn" class="bg-cyan-800 hover:bg-cyan-700 text-white h-20 w-6 rounded-r-lg flex items-center justify-center focus:outline-none" title="Toggle Controls Panel">
+            <svg id="toggle-icon" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+        </button>
+    </div>
+
+    <main class="flex-grow bg-gray-800/50 map-container hud-border m-2 rounded-lg overflow-hidden flex items-center justify-center p-2">
+        <div id="map-canvas" class="w-full h-full"></div>
+    </main>
+    
+    <script>
+        // --- STATE VARIABLES ---
+        let mapLibrary = {};
+        let turnOrder = [], currentTurnIndex = 0;
+        let currentMapObjects = {}, pinIdCounter = 0, pinPalette = {};
+        let currentMode = 'pan'; // Overall tool mode (pan, measure)
+        let interactionSubMode = 'pan'; // NEW: Sub-mode for pan mode (pan vs select)
+        const CELL_SIZE = 40;
+        let currentMapImage = null;
+        let dom = {};
+        let selectedObjectIds = []; 
+        let interactionState = {}; 
+        let clipboard = []; 
+
+        // --- CORE FUNCTIONS ---
+        function initializeDomElements() {
+            dom = {
+                mapCanvas: document.getElementById('map-canvas'), mapTitle: document.getElementById('map-title'), panelSubtitle: document.getElementById('panel-subtitle'), mapDescription: document.getElementById('map-description'),
+                turnOrderList: document.getElementById('turn-order-list'), charNameInput: document.getElementById('char-name'),
+                charInitiativeInput: document.getElementById('char-initiative'), charHpInput: document.getElementById('char-hp'),
+                pinsList: document.getElementById('pins-list'), pinNameInput: document.getElementById('pin-name'),
+                mapLibraryList: document.getElementById('map-library-list'), saveMapNameInput: document.getElementById('save-map-name'), saveMapBtn: document.getElementById('save-map-btn'),
+                themeSwitcher: document.getElementById('theme-switcher'),
+            };
+        }
+
+        function generateCombatGrid() {
+            const gridWidth = parseInt(document.getElementById('grid-width').value) || 20;
+            const gridHeight = parseInt(document.getElementById('grid-height').value) || 15;
+            const viewboxWidth = gridWidth * CELL_SIZE; 
+            const viewboxHeight = gridHeight * CELL_SIZE;
+
+            const imageTag = currentMapImage ? `<image href="${currentMapImage}" x="0" y="0" width="${viewboxWidth}" height="${viewboxHeight}" preserveAspectRatio="xMidYMid slice"/>` : `<rect width="100%" height="100%" fill="#1f2937" />`;
+            const gridPattern = `<defs><pattern id="grid" width="${CELL_SIZE}" height="${CELL_SIZE}" patternUnits="userSpaceOnUse"><path id="grid-path" d="M ${CELL_SIZE} 0 L 0 0 0 ${CELL_SIZE}" fill="none" stroke-width="1"/></pattern></defs>`;
+
+            dom.mapCanvas.innerHTML = `<svg id="grid-svg" viewBox="0 0 ${viewboxWidth} ${viewboxHeight}" xmlns="http://www.w3.org/2000/svg" class="${interactionSubMode}-mode"><defs>${gridPattern}</defs>${imageTag}<rect width="100%" height="100%" fill="url(#grid)" /><g id="object-layer"></g></svg>`; // Add initial class
+            
+            dom.mapTitle.textContent = currentMapImage ? "Uploaded Map" : "Tactical Combat Grid"; 
+            dom.panelSubtitle.textContent = `${gridWidth} x ${gridHeight} Grid`;
+            dom.mapDescription.textContent = `Click-drag to pan. Press [Shift] to toggle Select/Drag mode. Hotkeys: m, r, del, ctrl+c, ctrl+v. Mode: ${interactionSubMode}`; // Updated description
+            dom.saveMapBtn.disabled = !currentMapImage;
+            
+            setInteractionSubMode(interactionSubMode); // Ensure cursor is correct
+            renderMapObjects();
+        }
+        
+        // --- MAP UPLOAD ---
+        function handleImageUpload(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    currentMapImage = e.target.result;
+                    generateCombatGrid();
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        // --- MAP OBJECTS (Tokens, Pins, AoE) ---
+        function addMapObject(x, y, data) {
+            const snappedX = Math.floor(x / CELL_SIZE) * CELL_SIZE;
+            const snappedY = Math.floor(y / CELL_SIZE) * CELL_SIZE;
+            const objId = 'obj_' + (Date.now() + Math.random());
+            const newData = JSON.parse(JSON.stringify(data)); 
+            currentMapObjects[objId] = { id: objId, x: snappedX, y: snappedY, ...newData };
+            renderMapObjects();
+            return objId; 
+        }
+        
+        function renderMapObjects() {
+            const objectLayer = document.getElementById('object-layer');
+            if (!objectLayer) return;
+            objectLayer.innerHTML = '';
+
+            const activeParticipantId = turnOrder[currentTurnIndex]?.id || null;
+            
+            for (const objId in currentMapObjects) {
+                const data = currentMapObjects[objId];
+                const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                g.id = objId;
+                g.setAttribute('class', 'map-object-group');
+                let shape;
+                
+                if(data.isHidden) g.classList.add('hidden-object');
+
+                if (data.type === 'aoe') {
+                    if (data.shape === 'circle') {
+                        const size = data.size * CELL_SIZE;
+                        shape = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                        shape.setAttribute('r', size);
+                        g.setAttribute('transform', `translate(${data.x + CELL_SIZE / 2}, ${data.y + CELL_SIZE / 2})`);
+                    } else if (data.shape === 'cone') {
+                        shape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                        const sizeInPixels = data.size * CELL_SIZE;
+                        
+                        const originX = CELL_SIZE / 2;
+                        const originY = CELL_SIZE / 2;
+                        const endY = originY - sizeInPixels;
+                        const endX1 = originX - (sizeInPixels / 2);
+                        const endX2 = originX + (sizeInPixels / 2);
+                        shape.setAttribute('points', `${originX},${originY} ${endX1},${endY} ${endX2},${endY}`);
+                        
+                        const rotation = data.rotation || 0;
+                        g.setAttribute('transform', `translate(${data.x}, ${data.y}) rotate(${rotation} ${originX} ${originY})`);
+                    }
+                    if(shape) shape.setAttribute('class', 'aoe-shape map-object');
+                } else {
+                    g.setAttribute('transform', `translate(${data.x}, ${data.y})`);
+                    shape = document.createElementNS('http://www.w3.org/2000/svg', data.type === 'token' ? 'circle' : 'rect');
+                    shape.classList.add('map-object');
+                    if (data.type === 'token') {
+                        shape.classList.add('token-shape');
+                        shape.setAttribute('r', CELL_SIZE / 2);
+                        shape.setAttribute('cx', CELL_SIZE / 2);
+                        shape.setAttribute('cy', CELL_SIZE / 2);
+                    } else { 
+                        shape.classList.add('pin-shape');
+                        shape.setAttribute('width', CELL_SIZE);
+                        shape.setAttribute('height', CELL_SIZE);
+                    }
+                }
+
+                if (shape) {
+                    if (selectedObjectIds.includes(objId)) shape.classList.add('selected-object'); 
+                    if (data.type === 'token' && data.linkedParticipantId === activeParticipantId) shape.classList.add('active-turn-token');
+                    g.appendChild(shape);
+                }
+
+                if (data.name) {
+                    const textName = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    textName.setAttribute('class', 'map-object-label');
+                    textName.setAttribute('x', CELL_SIZE / 2); textName.setAttribute('y', CELL_SIZE / 2);
+                    textName.setAttribute('dominant-baseline', 'middle');
+                    textName.textContent = data.name;
+                    g.appendChild(textName);
+                }
+                if (data.type === 'token' && data.hp != null) {
+                    const textHp = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    textHp.setAttribute('class', 'map-object-hp');
+                    textHp.setAttribute('x', CELL_SIZE / 2); textHp.setAttribute('y', CELL_SIZE / 2 + 12);
+                    textHp.textContent = `HP: ${data.hp}`;
+                    g.appendChild(textHp);
+                }
+                if (data.type === 'token' && data.statuses?.length > 0) {
+                    const statusText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    statusText.setAttribute('class', 'status-text');
+                    statusText.setAttribute('x', CELL_SIZE / 2); statusText.setAttribute('y', -4);
+                    statusText.textContent = data.statuses.join(', ');
+                    g.appendChild(statusText);
+                }
+                objectLayer.appendChild(g);
+            }
+        }
+
+        // NEW: Function to set interaction sub-mode and update cursor
+        function setInteractionSubMode(mode) {
+             interactionSubMode = mode;
+             const svg = dom.mapCanvas.querySelector('svg');
+             if (svg) {
+                svg.classList.remove('pan-mode', 'select-mode');
+                svg.classList.add(`${mode}-mode`);
+             }
+             // Update help text
+             dom.mapDescription.textContent = `Click-drag to pan. Press [Shift] to toggle Select/Drag mode. Hotkeys: m, r, del, ctrl+c, ctrl+v. Mode: ${interactionSubMode}`;
+             console.log("Interaction Mode:", interactionSubMode); // For debugging
+        }
+        
+        // --- EVENT HANDLING (Unified system) ---
+        function initializeMasterEventListeners() {
+            const svgContainer = dom.mapCanvas;
+            
+            svgContainer.addEventListener('mousedown', e => {
+                if (e.button !== 0) return; // Only left click
+                const svg = dom.mapCanvas.querySelector('svg');
+                if (!svg) return;
+                
+                const startSvgPoint = getSVGCoordinates(svg, e.clientX, e.clientY);
+                
+                interactionState = {
+                    startPoint: { x: e.clientX, y: e.clientY },
+                    svgPoint: startSvgPoint,
+                    moved: false,
+                    isShiftModifier: e.shiftKey // Still record if shift is held for multi-select clicks
+                };
+
+                const targetGroup = e.target.closest('.map-object-group');
+                const targetId = targetGroup ? targetGroup.id : null;
+
+                // --- MODIFIED LOGIC using interactionSubMode ---
+                if (interactionSubMode === 'pan' && currentMode === 'pan') {
+                    // Current mode is PAN
+                    interactionState.type = 'pan';
+                    const vb = svg.getAttribute('viewBox').split(' ').map(Number);
+                    interactionState.viewBox = { x: vb[0], y: vb[1], width: vb[2], height: vb[3] };
+                    svg.classList.add('grabbing'); // Add grabbing cursor immediately for pan
+
+                } else if (interactionSubMode === 'select' && currentMode === 'pan') {
+                    // Current mode is SELECT/DRAG
+                    if (targetGroup) {
+                        // Click on object: DRAG
+                        interactionState.type = 'drag';
+                        interactionState.targetId = targetId;
+                        interactionState.originalPositions = {};
+
+                        // Handle selection add/remove (using shift *modifier*)
+                        if (interactionState.isShiftModifier) { // Check if shift is held *during this click*
+                            if (selectedObjectIds.includes(targetId)) {
+                                // Will be removed on mouseup if it wasn't a drag
+                            } else {
+                                selectedObjectIds.push(targetId); // Add to selection now
+                            }
+                        } else if (!selectedObjectIds.includes(targetId)) {
+                             // Simple click on a new object, select only this one
+                             selectedObjectIds = [targetId];
+                        }
+                        
+                        // Store original positions for all currently selected
+                        selectedObjectIds.forEach(id => {
+                            const obj = currentMapObjects[id];
+                            if (obj) {
+                                interactionState.originalPositions[id] = { x: obj.x, y: obj.y };
+                            }
+                        });
+                        renderMapObjects(); // Update visual selection immediately
+
+                    } else {
+                        // Click on empty space: SELECT BOX
+                        interactionState.type = 'selectionBox';
+                        const selectionRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                        selectionRect.id = 'temp-selection-rect';
+                        selectionRect.setAttribute('fill', 'rgba(100, 150, 255, 0.3)');
+                        selectionRect.setAttribute('stroke', 'rgba(100, 150, 255, 0.7)');
+                        selectionRect.setAttribute('stroke-width', '1');
+                        selectionRect.setAttribute('x', startSvgPoint.x);
+                        selectionRect.setAttribute('y', startSvgPoint.y);
+                        selectionRect.setAttribute('width', '0');
+                        selectionRect.setAttribute('height', '0');
+                        svg.querySelector('#object-layer').appendChild(selectionRect);
+                    }
+                } else if (currentMode === 'measure') {
+                    // Handle measure tool (no change needed here)
+                     interactionState.type = 'measure';
+                     const measureLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                     measureLine.id = 'temp-measure-line';
+                     measureLine.setAttribute('class', 'measure-line');
+                     measureLine.setAttribute('x1', interactionState.svgPoint.x);
+                     measureLine.setAttribute('y1', interactionState.svgPoint.y);
+                     measureLine.setAttribute('x2', interactionState.svgPoint.x);
+                     measureLine.setAttribute('y2', interactionState.svgPoint.y);
+                     
+                     const measureText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                     measureText.id = 'temp-measure-text';
+                     measureText.setAttribute('class', 'measure-text');
+                     measureText.setAttribute('x', interactionState.svgPoint.x);
+                     measureText.setAttribute('y', interactionState.svgPoint.y);
+                     measureText.textContent = '0 ft';
+                     
+                     svg.querySelector('#object-layer').append(measureLine, measureText);
+                }
+                // --- END MODIFIED LOGIC ---
+            });
+            
+            svgContainer.addEventListener('mousemove', e => {
+                if (!interactionState.type) return;
+                const svg = dom.mapCanvas.querySelector('svg');
+                if (!svg) return;
+
+                const dist = Math.hypot(e.clientX - interactionState.startPoint.x, e.clientY - interactionState.startPoint.y);
+                 if (dist > 5 && !interactionState.moved) { // Only set moved to true once
+                     interactionState.moved = true;
+                     // Add grabbing cursor only if panning, not during selection box drag
+                     if(interactionState.type === 'pan') {
+                        svg.classList.add('grabbing');
+                     } else if (interactionState.type === 'drag') {
+                         svg.classList.add('grabbing'); // Also grab while dragging objects
+                     }
+                }
+
+                const currentSvgPoint = getSVGCoordinates(svg, e.clientX, e.clientY);
+
+                switch(interactionState.type) {
+                    case 'pan':
+                        if(!interactionState.viewBox) return;
+                        let panDx = (interactionState.startPoint.x - e.clientX) * (interactionState.viewBox.width / svg.clientWidth); 
+                        let panDy = (interactionState.startPoint.y - e.clientY) * (interactionState.viewBox.height / svg.clientHeight); 
+                        svg.setAttribute('viewBox', `${interactionState.viewBox.x + panDx} ${interactionState.viewBox.y + panDy} ${interactionState.viewBox.width} ${interactionState.viewBox.height}`);
+                        break;
+                    case 'drag':
+                        if (!interactionState.originalPositions) break;
+
+                        const dragDx = currentSvgPoint.x - interactionState.svgPoint.x; 
+                        const dragDy = currentSvgPoint.y - interactionState.svgPoint.y; 
+
+                        const primaryOrig = interactionState.originalPositions[interactionState.targetId];
+                        if (!primaryOrig) break;
+
+                        const newX = primaryOrig.x + dragDx;
+                        const newY = primaryOrig.y + dragDy;
+
+                        const snappedX = Math.round(newX / CELL_SIZE) * CELL_SIZE;
+                        const snappedY = Math.round(newY / CELL_SIZE) * CELL_SIZE;
+
+                        const snapDx = snappedX - newX;
+                        const snapDy = snappedY - newY;
+
+                        selectedObjectIds.forEach(id => {
+                            const obj = currentMapObjects[id];
+                            const orig = interactionState.originalPositions[id];
+                            if(obj && orig) {
+                                obj.x = orig.x + dragDx + snapDx;
+                                obj.y = orig.y + dragDy + snapDy;
+                            }
+                        });
+                        
+                        renderMapObjects();
+                        break;
+                    case 'measure':
+                        const line = document.getElementById('temp-measure-line');
+                        const text = document.getElementById('temp-measure-text');
+                        if (line && text) {
+                            line.setAttribute('x2', currentSvgPoint.x);
+                            line.setAttribute('y2', currentSvgPoint.y);
+                            const m_dx = currentSvgPoint.x - interactionState.svgPoint.x;
+                            const m_dy = currentSvgPoint.y - interactionState.svgPoint.y;
+                            const m_dist = Math.hypot(m_dx, m_dy);
+                            const feet = Math.floor(m_dist / CELL_SIZE) * 5;
+                            text.setAttribute('x', interactionState.svgPoint.x + m_dx / 2);
+                            text.setAttribute('y', interactionState.svgPoint.y + m_dy / 2 - 10);
+                            text.textContent = `${feet} ft`;
+                        }
+                        break;
+                    case 'selectionBox':
+                        const rect = document.getElementById('temp-selection-rect');
+                        if (rect) {
+                            const x1 = interactionState.svgPoint.x;
+                            const y1 = interactionState.svgPoint.y;
+                            const x2 = currentSvgPoint.x;
+                            const y2 = currentSvgPoint.y;
+                            
+                            rect.setAttribute('x', Math.min(x1, x2));
+                            rect.setAttribute('y', Math.min(y1, y2));
+                            rect.setAttribute('width', Math.abs(x1 - x2));
+                            rect.setAttribute('height', Math.abs(y1 - y2));
+                        }
+                        break;
+                }
+            });
+
+            svgContainer.addEventListener('mouseup', e => {
+                const svg = dom.mapCanvas.querySelector('svg');
+                if (!svg) return;
+                
+                // --- MODIFIED LOGIC ---
+                if (interactionState.type === 'drag') {
+                     if (!interactionState.moved && interactionState.isShiftModifier) {
+                        // Shift+Click (no drag) on an object: remove it from selection if already selected
+                        if(selectedObjectIds.includes(interactionState.targetId) && selectedObjectIds.length > 1) { 
+                            selectedObjectIds = selectedObjectIds.filter(id => id !== interactionState.targetId);
+                        } 
+                     } else if (!interactionState.moved && !interactionState.isShiftModifier) {
+                         // Simple Click (no drag, no shift mod) on an object: Select only this one
+                         selectedObjectIds = [interactionState.targetId];
+                     }
+                } else if (interactionState.type === 'pan' && !interactionState.moved ) {
+                     // Click (no drag) on empty space in PAN mode: Deselect all
+                     if(interactionSubMode === 'pan') selectedObjectIds = [];
+
+                } else if (interactionState.type === 'selectionBox') {
+                    // This happens when finishing a drag selection box
+                    const rect = document.getElementById('temp-selection-rect');
+                    if (rect) {
+                        const x = parseFloat(rect.getAttribute('x'));
+                        const y = parseFloat(rect.getAttribute('y'));
+                        const width = parseFloat(rect.getAttribute('width'));
+                        const height = parseFloat(rect.getAttribute('height'));
+                        const bounds = { x1: x, y1: y, x2: x + width, y2: y + height };
+                        
+                        let newlySelected = [];
+                        for (const objId in currentMapObjects) {
+                            const obj = currentMapObjects[objId];
+                            if (obj.isHidden && dom.mapCanvas.querySelector('svg')?.classList.contains('player-view')) continue; 
+
+                            const objCenterX = obj.x + CELL_SIZE / 2;
+                            const objCenterY = obj.y + CELL_SIZE / 2;
+                            
+                            if (objCenterX > bounds.x1 && objCenterX < bounds.x2 && 
+                                objCenterY > bounds.y1 && objCenterY < bounds.y2) {
+                                newlySelected.push(objId);
+                            }
+                        }
+
+                        // Check if shift modifier was held *at the start* of the drag
+                        if (!interactionState.isShiftModifier) { 
+                            selectedObjectIds = newlySelected; // Replace selection
+                        } else { // Add to selection
+                            newlySelected.forEach(id => {
+                                if (!selectedObjectIds.includes(id)) {
+                                    selectedObjectIds.push(id);
+                                }
+                            });
+                        }
+                        rect.remove();
+                    } else if (!interactionState.moved && !interactionState.isShiftModifier) {
+                         // Click (no drag, no shift) on empty space in SELECT mode: Deselect all
+                         selectedObjectIds = [];
+                    }
+                }
+                // --- END MODIFIED LOGIC ---
+
+                if (interactionState.type === 'measure') {
+                    document.getElementById('temp-measure-line')?.remove();
+                    document.getElementById('temp-measure-text')?.remove();
+                    setMode('pan'); // Go back to pan mode after measuring
+                    setInteractionSubMode('pan'); // Reset submode too
+                }
+
+                svg.classList.remove('grabbing'); // Remove grabbing cursor on mouseup
+                interactionState = {};
+                renderMapObjects(); // Render final state
+            });
+            
+            svgContainer.addEventListener('contextmenu', e => {
+                e.preventDefault();
+                const targetGroup = e.target.closest('.map-object-group');
+                if (!targetGroup) return;
+                const objId = targetGroup.id;
+                const obj = currentMapObjects[objId];
+                if (!obj) return;
+                const hideOpt = obj.isHidden ? 'reveal' : 'hide';
+                const action = prompt(`Object: "${obj.name || 'Unnamed'}"\nOptions: 'rename', '${hideOpt}', 'delete'`);
+                if (!action) return;
+                
+                switch(action.toLowerCase()) {
+                    case 'rename':
+                        const newName = prompt("Enter new name:", obj.name);
+                        if (newName) obj.name = newName;
+                        break;
+                    case 'hide': obj.isHidden = true; break;
+                    case 'reveal': obj.isHidden = false; break;
+                    case 'delete':
+                        delete currentMapObjects[objId];
+                        selectedObjectIds = selectedObjectIds.filter(id => id !== objId); 
+                        break;
+                }
+                renderMapObjects();
+            });
+
+            svgContainer.addEventListener('wheel', e => {
+                // Allow wheel zoom regardless of interaction sub mode, but only in pan tool mode
+                if (currentMode !== 'pan') return; 
+                e.preventDefault();
+                const svg = dom.mapCanvas.querySelector('svg');
+                if(!svg) return;
+                let vb = svg.getAttribute('viewBox').split(' ').map(Number);
+                let viewBox = { x: vb[0], y: vb[1], width: vb[2], height: vb[3] };
+                let scale = e.deltaY > 0 ? 1.1 : 1 / 1.1;
+                let pt = getSVGCoordinates(svg, e.clientX, e.clientY);
+                viewBox.width *= scale; viewBox.height *= scale;
+                viewBox.x = pt.x - (pt.x - viewBox.x) * scale;
+                viewBox.y = pt.y - (pt.y - viewBox.y) * scale;
+                svg.setAttribute('viewBox', `${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`);
+            });
+            
+            svgContainer.addEventListener('dragover', e => e.preventDefault());
+            svgContainer.addEventListener('drop', e => {
+                e.preventDefault();
+                const svg = dom.mapCanvas.querySelector('svg');
+                if(!svg) return;
+                const pt = getSVGCoordinates(svg, e.clientX, e.clientY);
+                const data = e.dataTransfer.getData('text/plain');
+                if (data.startsWith('turn_participant:')) {
+                    const p = turnOrder[parseInt(data.split(':')[1], 10)];
+                    if (p) addMapObject(pt.x, pt.y, { type: 'token', name: p.name, hp: p.hp, statuses: p.statuses || [], linkedParticipantId: p.id });
+                } else if (data.startsWith('pin_palette:')) {
+                    const pinKey = data.split(':')[1];
+                    addMapObject(pt.x, pt.y, { type: 'pin', name: pinPalette[pinKey].name });
+                }
+            });
+        }
+
+        function getSVGCoordinates(svg, clientX, clientY) { const CTM = svg.getScreenCTM(); return { x: (clientX - CTM.e) / CTM.a, y: (clientY - CTM.f) / CTM.d }; }
+
+        function setMode(newMode) {
+            const svg = dom.mapCanvas.querySelector('svg');
+            // Reset interaction submode if switching away from pan tool
+            if (newMode !== 'pan') {
+                 setInteractionSubMode('pan'); // Default back to pan when switching tool
+            } else {
+                 setInteractionSubMode(interactionSubMode); // Keep current submode if staying in pan tool
+            }
+            if(svg) svg.classList.remove('measure-mode'); 
+            currentMode = newMode;
+            if (svg && newMode !== 'pan') {
+                svg.classList.add(`${newMode}-mode`);
+                svg.classList.remove('pan-mode', 'select-mode'); // Ensure pan/select classes are off
+            } else if (svg) {
+                // Handled by setInteractionSubMode
+            }
+            document.getElementById('measure-tool-btn').classList.toggle('bg-yellow-500', newMode === 'measure');
+        }
+        
+        // --- TURN TRACKER ---
+        function renderTurnOrder() {
+            dom.turnOrderList.innerHTML = ''; 
+            if (turnOrder.length === 0) { dom.turnOrderList.innerHTML = '<p class="text-gray-500 italic">Add participants.</p>'; return; }
+            turnOrder.forEach((p, index) => {
+                const item = document.createElement('div');
+                item.className = `p-2 rounded-md ${index === currentTurnIndex ? 'active-turn' : 'bg-gray-800'}`;
+                const statusesHTML = (p.statuses || []).map((s, sIndex) => `<span class="status-badge">${s}<span class="remove-status" onclick="removeStatus(${index}, ${sIndex})">&times;</span></span>`).join('');
+                item.innerHTML = `<div class="flex justify-between items-center" draggable="true" ondragstart="event.dataTransfer.setData('text/plain', 'turn_participant:${index}')"><div class="flex-grow"><span class="font-bold text-cyan-400">${p.initiative}</span> - <span class="font-bold text-white">${p.name}</span> <input type="number" value="${p.hp ?? ''}" placeholder="HP" class="w-20 bg-gray-700 border border-gray-600 rounded px-1 text-sm ml-2" onchange="updateParticipantHp(${index}, this.value)"></div><button onclick="showStatusPrompt(${index})" class="ml-2 text-green-400 text-xl font-bold">+</button><button onclick="removeParticipant(${index})" class="ml-2 text-red-400 text-xl font-bold">&times;</button></div><div class="pt-1">${statusesHTML}</div>`;
+                dom.turnOrderList.appendChild(item);
+            });
+        }
+        function addParticipant() { const name = dom.charNameInput.value.trim(), initiative = parseInt(dom.charInitiativeInput.value, 10), hp = dom.charHpInput.value.trim() !== '' ? parseInt(dom.charHpInput.value, 10) : null; if (name && !isNaN(initiative)) { const id = 'p_' + Date.now(); turnOrder.push({ id, name, initiative, hp, statuses:[] }); turnOrder.sort((a, b) => b.initiative - a.initiative); dom.charNameInput.value = ''; dom.charInitiativeInput.value = ''; dom.charHpInput.value = ''; renderTurnOrder(); } }
+        function removeParticipant(index) { const pId = turnOrder[index].id; turnOrder.splice(index, 1); Object.keys(currentMapObjects).forEach(objId => { if (currentMapObjects[objId].linkedParticipantId === pId) delete currentMapObjects[objId]; }); if (currentTurnIndex >= turnOrder.length) currentTurnIndex = Math.max(0, turnOrder.length - 1); renderTurnOrder(); renderMapObjects(); }
+        function updateParticipantHp(index, newHp) { if (turnOrder[index]) { const hpValue = newHp.trim() !== '' ? parseInt(newHp, 10) : null; turnOrder[index].hp = hpValue; const pId = turnOrder[index].id; Object.keys(currentMapObjects).forEach(objId => { if (currentMapObjects[objId].linkedParticipantId === pId) currentMapObjects[objId].hp = hpValue; }); renderMapObjects(); } }
+        function nextTurn() { if (turnOrder.length > 0) { currentTurnIndex = (currentTurnIndex + 1) % turnOrder.length; renderTurnOrder(); renderMapObjects(); const active = dom.turnOrderList.querySelector('.active-turn'); if (active) active.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } }
+        function resetTurns() { turnOrder = []; currentTurnIndex = 0; Object.keys(currentMapObjects).forEach(k => {if(currentMapObjects[k].type === 'token') delete currentMapObjects[k]}); renderTurnOrder(); renderMapObjects(); }
+        function showStatusPrompt(index) { const status = prompt('Enter status effect:'); if(status) { if(!turnOrder[index].statuses) turnOrder[index].statuses = []; turnOrder[index].statuses.push(status.trim()); renderTurnOrder(); const pId = turnOrder[index].id; Object.keys(currentMapObjects).forEach(objId => { if (currentMapObjects[objId].linkedParticipantId === pId) currentMapObjects[objId].statuses = turnOrder[index].statuses; }); renderMapObjects(); }}
+        function removeStatus(pIndex, sIndex) { turnOrder[pIndex].statuses.splice(sIndex, 1); renderTurnOrder(); const pId = turnOrder[pIndex].id; Object.keys(currentMapObjects).forEach(objId => { if (currentMapObjects[objId].linkedParticipantId === pId) currentMapObjects[objId].statuses = turnOrder[pIndex].statuses; }); renderMapObjects(); }
+        
+        // --- PIN PALETTE ---
+        function renderPinPalette() {
+            dom.pinsList.innerHTML = '';
+            for (const key in pinPalette) {
+                const pin = pinPalette[key];
+                const button = document.createElement('button');
+                button.className = 'bg-blue-700 hover:bg-blue-600 text-white font-bold py-1 px-3 rounded-md text-sm'; // Ensure this uses themed classes if needed
+                button.textContent = pin.name;
+                button.draggable = true;
+                button.ondragstart = (e) => e.dataTransfer.setData('text/plain', `pin_palette:${key}`);
+                button.oncontextmenu = (e) => { e.preventDefault(); if(confirm(`Delete pin "${pin.name}"?`)) { delete pinPalette[key]; renderPinPalette(); } };
+                dom.pinsList.appendChild(button);
+            }
+        }
+
+        // --- SESSION & LIBRARY STATE ---
+        function saveState() { const state = { turnOrder, currentTurnIndex, currentMapObjects, pinPalette, gridDimensions: { w: document.getElementById('grid-width').value, h: document.getElementById('grid-height').value }, currentMapImage }; const stateBlob = new Blob([JSON.stringify(state, null, 2)], {type: 'application/json'}); const url = URL.createObjectURL(stateBlob); const a = document.createElement('a'); a.href = url; a.download = 'ttrpg-combat-state.json'; a.click(); URL.revokeObjectURL(url); }
+        function loadState(event) { const file = event.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = e => { const state = JSON.parse(e.target.result); turnOrder = state.turnOrder || []; currentTurnIndex = state.currentTurnIndex || 0; currentMapObjects = state.currentMapObjects || {}; pinPalette = state.pinPalette || {}; currentMapImage = state.currentMapImage || null; document.getElementById('grid-width').value = state.gridDimensions.w; document.getElementById('grid-height').value = state.gridDimensions.h; generateCombatGrid(); renderTurnOrder(); renderPinPalette(); renderMapObjects(); }; reader.readAsText(file); }
+        function persistLibrary() { try { localStorage.setItem('ttrpgMapLibrary', JSON.stringify(mapLibrary)); } catch (e) { console.error("Failed to save map library", e); alert("Could not save map library. Storage might be full."); } }
+        function loadLibraryFromStorage() { const saved = localStorage.getItem('ttrpgMapLibrary'); if (saved) { mapLibrary = JSON.parse(saved); } else { mapLibrary = {}; } }
+        function saveMapToLibrary() { const name = dom.saveMapNameInput.value.trim(); if (name && currentMapImage) { mapLibrary[name] = currentMapImage; persistLibrary(); renderLibrary(); dom.saveMapNameInput.value = ''; } }
+        function renderLibrary() { 
+            dom.mapLibraryList.innerHTML = ''; 
+            for (const name in mapLibrary) { 
+                const div = document.createElement('div'); 
+                div.className = 'flex justify-between items-center bg-gray-800 p-2 rounded-md'; 
+                div.innerHTML = `<span>${name}</span><div class="space-x-2">` + 
+                    `<button onclick="loadMapFromLibrary('${name}')" class="bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded-md text-xs">Load</button>` +
+                    `<button onclick="deleteMapFromLibrary('${name}')" class="bg-red-700 hover:bg-red-600 text-white px-2 py-1 rounded-md text-xs">Del</button>` +
+                    `</div>`; 
+                dom.mapLibraryList.appendChild(div); 
+            } 
+        }
+        function loadMapFromLibrary(name) { if (mapLibrary[name]) { currentMapImage = mapLibrary[name]; generateCombatGrid(); } }
+        function deleteMapFromLibrary(name) { if (confirm(`Are you sure you want to delete the map "${name}"?`)) { delete mapLibrary[name]; persistLibrary(); renderLibrary(); } }
+        
+        function addAoeTemplate(shape) {
+            const size = prompt(`Enter ${shape === 'circle' ? 'radius' : 'length'} in squares:`);
+            if (size && !isNaN(size)) {
+                let data = { type: 'aoe', shape: shape, size: parseInt(size), name: `${size}sq ${shape}`};
+                if (shape === 'cone') {
+                    data.rotation = 0; 
+                }
+                addMapObject(100, 100, data);
+            }
+        }
+
+        // --- THEME SWITCHER ---
+        function changeTheme(themeName) {
+            document.body.classList.remove('theme-tech', 'theme-gaslit', 'theme-fantasy');
+            if (themeName !== 'Tech') { 
+                document.body.classList.add(`theme-${themeName.toLowerCase()}`);
+            }
+            localStorage.setItem('ttrpg-theme', themeName);
+            generateCombatGrid(); 
+        }
+        
+        // --- INITIALIZATION ---
+        window.onload = function() {
+            initializeDomElements();
+            initializeMasterEventListeners();
+            loadLibraryFromStorage();
+            renderLibrary();
+            renderTurnOrder();
+            renderPinPalette();
+            
+            const savedTheme = localStorage.getItem('ttrpg-theme') || 'Tech';
+            dom.themeSwitcher.value = savedTheme;
+            changeTheme(savedTheme); 
+
+            document.getElementById('toggle-controls-btn').addEventListener('click', () => {
+                const isNowCollapsed = document.getElementById('controls-panel').classList.toggle('hidden');
+                document.getElementById('toggle-icon').querySelector('path').setAttribute('d', isNowCollapsed ? 'M9 5l7 7-7 7' : 'M15 19l-7-7 7-7');
+            });
+            
+            dom.saveMapBtn.addEventListener('click', saveMapToLibrary);
+            document.getElementById('add-pin-btn').addEventListener('click', () => { 
+                const name = dom.pinNameInput.value.trim(); 
+                if (name) { 
+                    const key = 'pin_' + Date.now(); 
+                    pinPalette[key] = { name }; 
+                    dom.pinNameInput.value = ''; 
+                    renderPinPalette(); 
+                } 
+            });
+            document.getElementById('add-char-btn').addEventListener('click', addParticipant);
+            document.getElementById('next-turn-btn').addEventListener('click', nextTurn);
+            document.getElementById('reset-turns-btn').addEventListener('click', resetTurns);
+            document.getElementById('measure-tool-btn').addEventListener('click', () => setMode(currentMode === 'measure' ? 'pan' : 'measure'));
+            document.getElementById('dm-view-toggle').addEventListener('click', () => dom.mapCanvas.querySelector('svg')?.classList.toggle('player-view'));
+            
+            document.addEventListener('keydown', e => {
+                if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT') return;
+
+                // --- MODIFIED KEYDOWN ---
+                // Toggle interaction mode on Shift press
+                if (e.key === 'Shift' && !e.repeat) {
+                     e.preventDefault(); // Prevent text selection etc.
+                     const newMode = interactionSubMode === 'pan' ? 'select' : 'pan';
+                     setInteractionSubMode(newMode);
+                     return; // Don't process other keys on shift toggle
+                }
+                
+                // Prevent default browser actions for other shortcuts
+                if (e.ctrlKey && ['c', 'v'].includes(e.key.toLowerCase())) {
+                    e.preventDefault();
+                } else if (['arrowup', 'arrowdown', 'arrowright', 'm', 'r', 'delete', 'backspace', 'escape'].includes(e.key.toLowerCase())) {
+                    e.preventDefault();
+                }
+
+                // Copy Action
+                if (e.ctrlKey && e.key.toLowerCase() === 'c') {
+                    if (selectedObjectIds.length > 0) {
+                        clipboard = selectedObjectIds.map(id => {
+                            const obj = currentMapObjects[id];
+                            if (!obj) return null;
+                            const copyData = JSON.parse(JSON.stringify(obj));
+                            delete copyData.id;
+                            return copyData;
+                        }).filter(Boolean);
+                        console.log('Copied:', clipboard); 
+                    }
+                }
+                // Paste Action
+                else if (e.ctrlKey && e.key.toLowerCase() === 'v') {
+                    if (clipboard.length > 0) {
+                        const svg = dom.mapCanvas.querySelector('svg');
+                        if (!svg) return;
+                        const vb = svg.getAttribute('viewBox').split(' ').map(Number);
+                        const centerX = vb[0] + vb[2] / 2;
+                        const centerY = vb[1] + vb[3] / 2;
+
+                        selectedObjectIds = []; 
+                        clipboard.forEach((objData, index) => {
+                            const pasteX = centerX + index * (CELL_SIZE / 4); 
+                            const pasteY = centerY + index * (CELL_SIZE / 4);
+                            const newId = addMapObject(pasteX, pasteY, objData);
+                            if (newId) {
+                                selectedObjectIds.push(newId);
+                            }
+                        });
+                        renderMapObjects(); 
+                    }
+                }
+                // Other Actions 
+                else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedObjectIds.length > 0) {
+                    selectedObjectIds.forEach(id => { delete currentMapObjects[id]; });
+                    selectedObjectIds = []; 
+                    renderMapObjects();
+                } else if (['ArrowUp', 'ArrowDown', 'ArrowRight'].includes(e.key)) {
+                    if (e.key === 'ArrowRight') nextTurn();
+                    else if (selectedObjectIds.length > 0) {
+                        selectedObjectIds.forEach(id => {
+                            const obj = currentMapObjects[id];
+                            if (obj && obj.type === 'token' && typeof obj.hp === 'number') {
+                                obj.hp += (e.key === 'ArrowUp' ? 1 : -1);
+                                const p = turnOrder.find(p => p.id === obj.linkedParticipantId);
+                                if (p) p.hp = obj.hp;
+                            }
+                        });
+                        renderTurnOrder(); 
+                        renderMapObjects();
+                    }
+                } else if (e.key.toLowerCase() === 'r' && selectedObjectIds.length > 0) {
+                    selectedObjectIds.forEach(id => {
+                        const obj = currentMapObjects[id];
+                        if (obj && obj.shape === 'cone') { 
+                            const increment = e.shiftKey ? -45 : 45; // Keep shift modifier for rotation direction
+                            obj.rotation = (obj.rotation + increment + 360) % 360; 
+                        }
+                    });
+                    renderMapObjects(); 
+                } else if (e.key.toLowerCase() === 'm') { 
+                    setMode(currentMode === 'measure' ? 'pan' : 'measure'); // Toggle measure tool
+                } else if (e.key === 'Escape') { 
+                    if (currentMode === 'measure') {
+                         setMode('pan'); // Exit measure mode
+                    } else if (interactionSubMode === 'select') {
+                         setInteractionSubMode('pan'); // Exit select mode
+                    }
+                    selectedObjectIds = []; // Deselect on escape
+                    renderMapObjects();
+                }
+            });
+
+            // Removed Spacebar keyup listener
+        };
+    </script>
 </body>
 </html>
